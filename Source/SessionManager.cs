@@ -1,7 +1,6 @@
 ﻿using System;
 using System.Collections.Generic;
 using UnityEngine;
-using UnityEngine.Events;
 
 namespace Unity.Sessions
 {
@@ -210,7 +209,7 @@ namespace Unity.Sessions
         /// <summary>
         /// Marks the current session as started, so from now on we keep the data of disconnected players.
         /// </summary>
-        public override void OnSessionStarted()
+        public override void StartSession()
         {
             _has_session_started = true;
 
@@ -221,7 +220,7 @@ namespace Unity.Sessions
         /// <summary>
         /// Reinitializes session data from connected players, and clears data from disconnected players, so that if they reconnect in the next game, they will be treated as new players
         /// </summary>
-        public override void OnSessionEnded()
+        public override void EndSession()
         {
             ClearDisconnectedPlayersData();
             ReinitializePlayersData();
