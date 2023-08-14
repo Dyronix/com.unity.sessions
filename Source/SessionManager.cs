@@ -1,93 +1,95 @@
 ﻿using System;
 using System.Collections.Generic;
 using UnityEngine;
+using UnityEngine.Events;
 
 namespace Unity.Sessions
 {
-    public interface ISessionPlayerData
-    {
-        bool IsConnected { get; set; }
-        ulong ClientID { get; set; }
-        void Reinitialize();
-    }
-
     /// <summary>
     /// This class uses a unique player ID to bind a player to a session. Once that player connects to a host, the host
     /// associates the current ClientID to the player's unique ID. If the player disconnects and reconnects to the same
     /// host, the session is preserved.
     /// </summary>
+    
     /// <remarks>
     /// Using a client-generated player ID and sending it directly could be problematic, as a malicious user could
     /// intercept it and reuse it to impersonate the original user. We are currently investigating this to offer a
     /// solution that handles security better.
     /// </remarks>
+    
     /// <typeparam name="T"></typeparam>
-    public class SessionManager<T> where T : struct, ISessionPlayerData
+    public class SessionManager<T> : BaseSessionManager
+        where T : struct, ISessionPlayerData
     {
-        SessionManager()
-        {
-            m_ClientData = new Dictionary<string, T>();
-            m_ClientIDToPlayerId = new Dictionary<ulong, string>();
-        }
-
-        public static SessionManager<T> Instance => s_Instance ??= new SessionManager<T>();
-
-        static SessionManager<T> s_Instance;
-
+        //--------------------------------------------------------------------------------------
+        // Fields
         /// <summary>
         /// Maps a given client player id to the data for a given client player.
         /// </summary>
-        Dictionary<string, T> m_ClientData;
+        private Dictionary<string, T> _client_data;
 
         /// <summary>
         /// Map to allow us to cheaply map from player id to player data.
         /// </summary>
-        Dictionary<ulong, string> m_ClientIDToPlayerId;
+        private Dictionary<ulong, string> _client_id_to_player_id;
 
-        bool m_HasSessionStarted;
+        /// <summary>
+        /// Has the session already started?
+        /// </summary>
+        private bool _has_session_started;
 
+        //--------------------------------------------------------------------------------------
+        public SessionManager()
+        {
+            _client_data = new Dictionary<string, T>();
+            _client_id_to_player_id = new Dictionary<ulong, string>();
+        }
+
+        //--------------------------------------------------------------------------------------
         /// <summary>
         /// Handles client disconnect."
         /// </summary>
-        public void DisconnectClient(ulong clientId)
+        public override void DisconnectClient(ulong clientId)
         {
-            if (m_HasSessionStarted)
+            if (_has_session_started)
             {
                 // Mark client as disconnected, but keep their data so they can reconnect.
-                if (m_ClientIDToPlayerId.TryGetValue(clientId, out var playerId))
+                if (_client_id_to_player_id.TryGetValue(clientId, out var playerId))
                 {
                     if (GetPlayerData(playerId)?.ClientID == clientId)
                     {
-                        var clientData = m_ClientData[playerId];
-                        clientData.IsConnected = false;
-                        m_ClientData[playerId] = clientData;
+                        var client_data = _client_data[playerId];
+                        client_data.IsConnected = false;
+                        _client_data[playerId] = client_data;
                     }
                 }
             }
             else
             {
                 // Session has not started, no need to keep their data
-                if (m_ClientIDToPlayerId.TryGetValue(clientId, out var playerId))
+                if (_client_id_to_player_id.TryGetValue(clientId, out var playerId))
                 {
-                    m_ClientIDToPlayerId.Remove(clientId);
+                    _client_id_to_player_id.Remove(clientId);
                     if (GetPlayerData(playerId)?.ClientID == clientId)
                     {
-                        m_ClientData.Remove(playerId);
+                        _client_data.Remove(playerId);
                     }
                 }
             }
         }
 
+        //--------------------------------------------------------------------------------------
         /// <summary>
-        ///
+        /// Check if the player already has a connection running
         /// </summary>
         /// <param name="playerId">This is the playerId that is unique to this client and persists across multiple logins from the same client</param>
         /// <returns>True if a player with this ID is already connected.</returns>
-        public bool IsDuplicateConnection(string playerId)
+        public override bool IsDuplicateConnection(string playerId)
         {
-            return m_ClientData.ContainsKey(playerId) && m_ClientData[playerId].IsConnected;
+            return _client_data.ContainsKey(playerId) && _client_data[playerId].IsConnected;
         }
 
+        //--------------------------------------------------------------------------------------
         /// <summary>
         /// Adds a connecting player's session data if it is a new connection, or updates their session data in case of a reconnection.
         /// </summary>
@@ -96,7 +98,7 @@ namespace Unity.Sessions
         /// <param name="sessionPlayerData">The player's initial data</param>
         public void SetupConnectingPlayerSessionData(ulong clientId, string playerId, T sessionPlayerData)
         {
-            var isReconnecting = false;
+            var is_reconnecting = false;
 
             // Test for duplicate connection
             if (IsDuplicateConnection(playerId))
@@ -106,72 +108,77 @@ namespace Unity.Sessions
             }
 
             // If another client exists with the same playerId
-            if (m_ClientData.ContainsKey(playerId))
+            if (_client_data.ContainsKey(playerId))
             {
-                if (!m_ClientData[playerId].IsConnected)
+                if (!_client_data[playerId].IsConnected)
                 {
                     // If this connecting client has the same player Id as a disconnected client, this is a reconnection.
-                    isReconnecting = true;
+                    is_reconnecting = true;
                 }
 
             }
 
             // Reconnecting. Give data from old player to new player
-            if (isReconnecting)
+            if (is_reconnecting)
             {
                 // Update player session data
-                sessionPlayerData = m_ClientData[playerId];
+                sessionPlayerData = _client_data[playerId];
                 sessionPlayerData.ClientID = clientId;
                 sessionPlayerData.IsConnected = true;
             }
 
             //Populate our dictionaries with the SessionPlayerData
-            m_ClientIDToPlayerId[clientId] = playerId;
-            m_ClientData[playerId] = sessionPlayerData;
+            _client_id_to_player_id[clientId] = playerId;
+            _client_data[playerId] = sessionPlayerData;
+
+            OnPlayerDataSetup?.Invoke(clientId, playerId, sessionPlayerData);
         }
 
+        //--------------------------------------------------------------------------------------
         /// <summary>
-        ///
+        /// Retrieve the player id
         /// </summary>
         /// <param name="clientId"> id of the client whose data is requested</param>
         /// <returns>The Player ID matching the given client ID</returns>
-        public string GetPlayerId(ulong clientId)
+        public override string GetPlayerId(ulong clientId)
         {
-            if (m_ClientIDToPlayerId.TryGetValue(clientId, out string playerId))
+            if (_client_id_to_player_id.TryGetValue(clientId, out string player_id))
             {
-                return playerId;
+                return player_id;
             }
 
             Debug.Log($"No client player ID found mapped to the given client ID: {clientId}");
             return null;
         }
 
+        //--------------------------------------------------------------------------------------
         /// <summary>
-        ///
+        /// Retrieve player data from clientId
         /// </summary>
         /// <param name="clientId"> id of the client whose data is requested</param>
         /// <returns>Player data struct matching the given ID</returns>
         public T? GetPlayerData(ulong clientId)
         {
             //First see if we have a playerId matching the clientID given.
-            var playerId = GetPlayerId(clientId);
-            if (playerId != null)
+            var player_id = GetPlayerId(clientId);
+            if (player_id != null)
             {
-                return GetPlayerData(playerId);
+                return GetPlayerData(player_id);
             }
 
             Debug.Log($"No client player ID found mapped to the given client ID: {clientId}");
             return null;
         }
 
+        //--------------------------------------------------------------------------------------
         /// <summary>
-        ///
+        /// Retrieve player data from playerId
         /// </summary>
         /// <param name="playerId"> Player ID of the client whose data is requested</param>
         /// <returns>Player data struct matching the given ID</returns>
         public T? GetPlayerData(string playerId)
         {
-            if (m_ClientData.TryGetValue(playerId, out T data))
+            if (_client_data.TryGetValue(playerId, out T data))
             {
                 return data;
             }
@@ -187,9 +194,11 @@ namespace Unity.Sessions
         /// <param name="sessionPlayerData"> new data to overwrite the old </param>
         public void SetPlayerData(ulong clientId, T sessionPlayerData)
         {
-            if (m_ClientIDToPlayerId.TryGetValue(clientId, out string playerId))
+            if (_client_id_to_player_id.TryGetValue(clientId, out string playerId))
             {
-                m_ClientData[playerId] = sessionPlayerData;
+                _client_data[playerId] = sessionPlayerData;
+
+                OnPlayerDataSet?.Invoke(clientId, sessionPlayerData);
             }
             else
             {
@@ -197,66 +206,77 @@ namespace Unity.Sessions
             }
         }
 
+        //--------------------------------------------------------------------------------------
         /// <summary>
         /// Marks the current session as started, so from now on we keep the data of disconnected players.
         /// </summary>
-        public void OnSessionStarted()
+        public override void OnSessionStarted()
         {
-            m_HasSessionStarted = true;
+            _has_session_started = true;
+
+            OnSessionStarted?.Invoke();
         }
 
+        //--------------------------------------------------------------------------------------
         /// <summary>
         /// Reinitializes session data from connected players, and clears data from disconnected players, so that if they reconnect in the next game, they will be treated as new players
         /// </summary>
-        public void OnSessionEnded()
+        public override void OnSessionEnded()
         {
             ClearDisconnectedPlayersData();
             ReinitializePlayersData();
-            m_HasSessionStarted = false;
+
+            _has_session_started = false;
+
+            OnSessionEnded?.Invoke();
         }
 
+        //--------------------------------------------------------------------------------------
         /// <summary>
         /// Resets all our runtime state, so it is ready to be reinitialized when starting a new server
         /// </summary>
-        public void OnServerEnded()
+        public override void OnServerEnded()
         {
-            m_ClientData.Clear();
-            m_ClientIDToPlayerId.Clear();
-            m_HasSessionStarted = false;
+            _client_data.Clear();
+            _client_id_to_player_id.Clear();
+
+            _has_session_started = false;
         }
 
-        void ReinitializePlayersData()
+        //--------------------------------------------------------------------------------------
+        private void ReinitializePlayersData()
         {
-            foreach (var id in m_ClientIDToPlayerId.Keys)
+            foreach (var id in _client_id_to_player_id.Keys)
             {
-                string playerId = m_ClientIDToPlayerId[id];
-                T sessionPlayerData = m_ClientData[playerId];
-                sessionPlayerData.Reinitialize();
-                m_ClientData[playerId] = sessionPlayerData;
+                string player_id = _client_id_to_player_id[id];
+                T session_player_data = _client_data[player_id];
+                session_player_data.Reinitialize();
+                _client_data[player_id] = session_player_data;
             }
         }
 
-        void ClearDisconnectedPlayersData()
+        //--------------------------------------------------------------------------------------
+        private void ClearDisconnectedPlayersData()
         {
-            List<ulong> idsToClear = new List<ulong>();
-            foreach (var id in m_ClientIDToPlayerId.Keys)
+            List<ulong> ids_to_clear = new List<ulong>();
+            foreach (var id in _client_id_to_player_id.Keys)
             {
                 var data = GetPlayerData(id);
                 if (data is { IsConnected: false })
                 {
-                    idsToClear.Add(id);
+                    ids_to_clear.Add(id);
                 }
             }
 
-            foreach (var id in idsToClear)
+            foreach (var id in ids_to_clear)
             {
-                string playerId = m_ClientIDToPlayerId[id];
-                if (GetPlayerData(playerId)?.ClientID == id)
+                string player_id = _client_id_to_player_id[id];
+                if (GetPlayerData(player_id)?.ClientID == id)
                 {
-                    m_ClientData.Remove(playerId);
+                    _client_data.Remove(player_id);
                 }
 
-                m_ClientIDToPlayerId.Remove(id);
+                _client_id_to_player_id.Remove(id);
             }
         }
     }
