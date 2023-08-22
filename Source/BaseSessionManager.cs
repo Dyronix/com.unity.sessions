@@ -11,10 +11,10 @@ namespace Unity.Sessions
         public class PlayerDataSetupUnityEvent : UnityEvent<ulong, string, ISessionPlayerData> { }
         public class PlayerDataSet : UnityEvent<ulong, ISessionPlayerData> {};
 
-        public SessionStartedUnityEvent OnSessionStarted;
-        public SessionEndedUnityEvent OnSessionEnded;
-        public PlayerDataSetupUnityEvent OnPlayerDataSetup;
-        public PlayerDataSet OnPlayerDataSet;
+        public readonly SessionStartedUnityEvent OnSessionStarted = new SessionStartedUnityEvent();
+        public readonly SessionEndedUnityEvent OnSessionEnded = new SessionEndedUnityEvent();
+        public readonly PlayerDataSetupUnityEvent OnPlayerDataSetup = new PlayerDataSetupUnityEvent();
+        public readonly PlayerDataSet OnPlayerDataSet = new PlayerDataSet();
 
         //--------------------------------------------------------------------------------------
         public abstract void DisconnectClient(ulong clientId);
