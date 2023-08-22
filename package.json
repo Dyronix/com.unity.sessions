@@ -1,6 +1,6 @@
 {
   "name": "com.unity.sessions",
-  "version": "2.0.1",
+  "version": "2.0.2",
   "displayName": "Unity Sessions",
   "description": "Binding a unique player ID to a session",
   "unity": "2020.3",
