@@ -21,6 +21,13 @@ namespace Unity.Sessions
         where T : struct, ISessionPlayerData
     {
         //--------------------------------------------------------------------------------------
+        // Properties
+        public bool HasSessionStarted
+        {
+            get { return _has_session_started; }
+        }
+
+        //--------------------------------------------------------------------------------------
         // Fields
         /// <summary>
         /// Maps a given client player id to the data for a given client player.
